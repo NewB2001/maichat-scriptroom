@@ -1,0 +1,16 @@
+# 运行配置：用户本地生成，不入版本控制
+config.local.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# 编辑器
+.idea/
+.vscode/
+
+# 系统
+.DS_Store
+Thumbs.db

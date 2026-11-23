@@ -1,0 +1,40 @@
+{
+  "manifest_version": 2,
+  "id": "maichat.scriptroom",
+  "version": "0.1.0",
+  "name": "麦麦聊天室（壳阶段）",
+  "description": "剧本聊天室的 UI 壳：房间管理、群员列表、群聊时间线、多行剧本输入、私聊入口与接话节奏模拟。本阶段全部为假数据（Mock），不读取也不写入任何 Bot 数据，不做任何消息处理。",
+  "plugin_type": "extension",
+  "author": {
+    "name": "麦麦剧本聊天室项目组",
+    "url": "http://127.0.0.1:8001/extensions/maichat.scriptroom/studio"
+  },
+  "license": "MIT",
+  "urls": {
+    "repository": "http://127.0.0.1:8001/extensions/maichat.scriptroom/studio",
+    "homepage": "http://127.0.0.1:8001/extensions/maichat.scriptroom/studio"
+  },
+  "host_application": {
+    "min_version": "1.4.4",
+    "max_version": "1.4.99"
+  },
+  "sdk": {
+    "min_version": "2.20.0",
+    "max_version": "2.99.99"
+  },
+  "dependencies": [],
+  "capabilities": [],
+  "i18n": {
+    "default_locale": "zh-CN",
+    "supported_locales": [
+      "zh-CN"
+    ]
+  },
+  "display": {
+    "icon": {
+      "type": "local",
+      "value": "assets/icon.png",
+      "fallback": "image"
+    }
+  }
+}
