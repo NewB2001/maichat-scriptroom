@@ -159,6 +159,24 @@
   .panel-head .muted { font-weight: 400; }
   .muted { color: var(--muted); font-size: 12px; }
 
+  /* 「私聊对象」标题行的手动刷新按钮（数据只在 boot 拉一次，不自动轮询） */
+  .panel-head .refresh-peers-btn { margin-left: auto; font-weight: 400; font-size: 11px; }
+
+  /* 标题行里的系统提示：占据剩余空间、超出省略号、不把标题行撑爆。
+     全文放在 title 上，鼠标悬停即可查看（短文本无需 ellipsis，样式自动不生效）。 */
+  .panel-head .head-notice {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 400;
+    text-align: right;
+  }
+  .panel-head .head-notice.err { color: var(--danger); }
+  .panel-head .head-notice.ok { color: #6ee7a8; }
+
   /* ── 房间 ─────────────────────────────────────────────── */
   .room-form { margin-bottom: 8px; }
 
@@ -398,6 +416,16 @@
   }
 
   .member-add-row .maibot-button { flex: 0 0 auto; padding: 5px 10px; }
+
+  /* 「我的角色」面板顶部：当前操作的角色（私聊以它为视角） */
+  .speaker-picker-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .speaker-picker-label { font-size: 12px; color: var(--muted); flex: 0 0 auto; }
+  .speaker-picker-row .script-speaker { flex: 1 1 auto; }
 
   .picker-cands {
     display: flex;
@@ -646,6 +674,33 @@
   .truncate-confirm .tc-text { margin-bottom: 8px; }
   .truncate-confirm .tc-actions { display: flex; gap: 8px; }
   .truncate-confirm .maibot-button { padding: 3px 10px; font-size: 12px; }
+
+  /* ── 危险操作的通用确认层（删除房间 / 角色 / 群员 / 私聊对象）───────── */
+  .confirm-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(0, 0, 0, .55);
+  }
+  .confirm-card {
+    width: 100%;
+    max-width: 320px;
+    padding: 16px 18px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--danger);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--fg);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+    font-size: 13px;
+  }
+  .confirm-card .cf-title { font-weight: 600; margin-bottom: 6px; }
+  .confirm-card .cf-detail { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+  .confirm-card .cf-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
   /* 输入区上方的状态条 */
   .stage-bar {
@@ -935,13 +990,14 @@
         <div class="picker" id="member-picker" hidden></div>
       </section>
 
-      <!-- 私聊：没有「房间」这回事，只列私聊对象 -->
+      <!-- 私聊：没有「房间」这回事，直接列宿主的受管 Bot（默认全部展示，无需增删）-->
       <section class="panel" id="panel-private" hidden>
         <div class="panel-head">
           <span>私聊对象</span>
           <span class="muted" id="private-peer-count"></span>
+          <button class="icon-btn refresh-peers-btn" type="button" id="refresh-peers-btn"
+                  title="重新拉取宿主的受管 Bot 名单（当前为一次性加载，不自动刷新）">刷新</button>
         </div>
-        <div class="member-add-row" id="peer-add-row"></div>
         <ul class="memberlist" id="private-peers"></ul>
       </section>
 
@@ -949,6 +1005,10 @@
       <section class="panel" id="panel-my-roles" hidden>
         <div class="panel-head">
           <span>我的角色</span>
+        </div>
+        <div class="speaker-picker-row">
+          <span class="speaker-picker-label">当前操作的角色</span>
+          <select class="script-speaker" id="private-speaker" title="当前用哪个角色私聊"></select>
         </div>
         <div class="member-add-row" id="my-role-add-row"></div>
         <ul class="memberlist" id="my-roles"></ul>
@@ -961,6 +1021,7 @@
           <span id="stage-room-name">—</span>
           <button class="maibot-button maibot-button-secondary" type="button" id="time-machine-btn"
                   title="前往未来：生成一段剧情（低频功能，不抢主操作的注意力）">时光机</button>
+          <span class="head-notice" id="script-error" hidden></span>
           <button class="maibot-button maibot-button-danger" type="button" id="stop-turn" hidden>停止本轮</button>
         </div>
         <div id="tm-slot-group"></div>
@@ -977,6 +1038,7 @@
           <span id="private-title">私聊</span>
           <button class="maibot-button maibot-button-secondary" type="button" id="time-machine-private-btn"
                   title="前往未来：生成一段剧情（低频功能，不抢主操作的注意力）">时光机</button>
+          <span class="head-notice" id="private-script-error" hidden></span>
           <button class="maibot-button maibot-button-danger" type="button" id="stop-private-turn" hidden>停止本轮</button>
         </div>
         <div id="tm-slot-private"></div>
@@ -997,15 +1059,14 @@
 
         <div class="composer-grid">
           <div>
-            <div class="field-title">不勾选=随机</div>
+            <div class="field-title">不勾选=随机接话</div>
             <div class="checks" id="speaker-checks"></div>
             <div class="muted" id="turn-hint" style="margin-top:6px"></div>
           </div>
         </div>
 
         <div class="composer-foot">
-          <span class="err" id="script-error" hidden></span>
-          <button class="maibot-button maibot-button-primary" type="button" id="submit-beat">开演（提交一幕）</button>
+          <button class="maibot-button maibot-button-primary" type="button" id="submit-beat">发送消息</button>
         </div>
       </section>
 
@@ -1014,7 +1075,6 @@
         <div class="composer-head">
           <span>消息发送</span>
           <span class="muted" id="private-peer-note">只发给对方一人</span>
-          <select class="script-speaker" id="private-speaker" title="这次用哪个角色发"></select>
         </div>
 
         <div class="stage-bar" id="stage-bar-private" hidden></div>
@@ -1022,11 +1082,22 @@
           placeholder="要说的话…"></textarea>
 
         <div class="composer-foot">
-          <span class="err" id="private-script-error" hidden></span>
-          <button class="maibot-button maibot-button-primary" type="button" id="submit-private">发送</button>
+          <button class="maibot-button maibot-button-primary" type="button" id="submit-private">发送消息</button>
         </div>
       </section>
     </main>
+  </div>
+</div>
+
+<!-- 危险操作的通用确认层：内容由 askConfirm() 动态填入，默认隐藏 -->
+<div class="confirm-overlay" id="confirm-overlay" hidden>
+  <div class="confirm-card" role="alertdialog" aria-modal="true">
+    <div class="cf-title" id="confirm-title"></div>
+    <div class="cf-detail" id="confirm-detail"></div>
+    <div class="cf-actions">
+      <button class="maibot-button" type="button" id="confirm-cancel">取消</button>
+      <button class="maibot-button maibot-button-danger" type="button" id="confirm-ok">确认删除</button>
+    </div>
   </div>
 </div>
 
@@ -1149,15 +1220,11 @@
     return null;
   }
 
-  // 切到某个私聊对象，并挑一个默认的我方角色
+  // 切到某个私聊对象。视角（当前操作的角色）由下拉框固定，不随点 Bot 而变；
+  // 只有当前角色已失效时才兜底选第一个。
   function switchPeer(peerId) {
     state.currentPeerId = peerId;
-    var preferred = null;
-    state.privateThreads.forEach(function (thread) {
-      if (thread.peer_member_id === peerId && !preferred) { preferred = thread.my_member_id; }
-    });
-    if (preferred) { state.privateSpeaker = preferred; }
-    else if (!allMyRoles().some(function (m) { return m.member_id === state.privateSpeaker; })) {
+    if (!allMyRoles().some(function (m) { return m.member_id === state.privateSpeaker; })) {
       state.privateSpeaker = allMyRoles().length ? allMyRoles()[0].member_id : "";
     }
     renderPrivatePeers();
@@ -1219,7 +1286,13 @@
       remove.className = "icon-btn is-danger";
       remove.textContent = "✕";
       remove.title = "删掉这个房间";
-      remove.onclick = function () { deleteRoom(room); };
+      remove.onclick = function () {
+        askConfirm(
+          "删除房间「" + room.name + "」？",
+          "这个房间的聊天记录会一起清掉，不可撤销。",
+          function () { deleteRoom(room); }
+        );
+      };
       li.appendChild(remove);
 
       list.appendChild(li);
@@ -1542,7 +1615,13 @@
     remove.className = "icon-btn is-danger";
     remove.textContent = "删除";
     remove.title = "把他移出这个房间（已有发言保留）";
-    remove.onclick = function () { removeMember(member.member_id); };
+    remove.onclick = function () {
+      askConfirm(
+        "把「" + member.display_name + "」移出房间？",
+        "他已有的发言会保留，但不再留在这个群里。",
+        function () { removeMember(member.member_id); }
+      );
+    };
     actions.appendChild(remove);
     li.appendChild(actions);
     return li;
@@ -1624,7 +1703,7 @@
       var inRoom = {};
       (room && room.member_ids ? room.member_ids : []).forEach(function (id) { inRoom[id] = true; });
       memberSelect.innerHTML = "";
-      // 上游名单：我的角色 + 私聊对象
+      // 上游名单：我的角色 + 私聊对象（与 replace 候选同一套来源）
       var upstream = chosen === "user_role" ? state.myRoles : state.peers;
       var candidates = upstream.filter(function (member) { return member.kind === chosen; });
       if (!candidates.length) {
@@ -1634,15 +1713,22 @@
         memberSelect.appendChild(none);
         return;
       }
-      candidates.forEach(function (member) {
+      // 只列还没进房间的：全部都在房间里时就别再把这些名字摆出来了
+      var free = candidates.filter(function (member) { return !inRoom[member.member_id]; });
+      if (!free.length) {
+        var done = document.createElement("option");
+        done.value = "";
+        done.textContent = "（都已添加）";
+        memberSelect.appendChild(done);
+        return;
+      }
+      free.forEach(function (member) {
         var option = document.createElement("option");
         option.value = member.member_id;
-        option.textContent = member.display_name + (inRoom[member.member_id] ? "（已在房间）" : "");
-        option.disabled = !!inRoom[member.member_id];
+        option.textContent = member.display_name;
         memberSelect.appendChild(option);
       });
-      var free = candidates.filter(function (member) { return !inRoom[member.member_id]; });
-      if (free.length) { memberSelect.value = free[0].member_id; }
+      memberSelect.value = free[0].member_id;
     }
     kindSelect.onchange = fill;
     addButton.onclick = function () {
@@ -1653,23 +1739,51 @@
     fill();
   }
 
-  // 群员面板里的候选列表：**替换**某个人时用（候选 = 上游已有的角色）
+  // 群员面板里的候选列表：**替换**某个人时用
+  // · 就近出现：从「我的角色」点开就贴在 members-user 后，从「麦麦 Bot」点开就贴在 members-bot 后
+  // · 候选只列**同类且不在房间里**的角色：我的角色只换我的角色、Bot 只换 Bot，
+  //   而且已经在房间里的不再列出（否则选它只会把两个人换位，不是替换）
   function renderMemberPicker() {
     var box = $("member-picker");
     if (!state.replaceTarget) { box.hidden = true; box.innerHTML = ""; return; }
+
+    var target = memberById(state.replaceTarget);
+    if (!target) { state.replaceTarget = null; box.hidden = true; box.innerHTML = ""; return; }
+    var isUser = target.kind === "user_role";
+
+    // 把操作栏挪到被替换者所属那一组的正下方，而不是一直待在面板底部
+    var anchor = $(isUser ? "members-user" : "members-bot");
+    if (anchor && anchor.nextSibling !== box) {
+      anchor.parentNode.insertBefore(box, anchor.nextSibling);
+    }
+
     box.hidden = false;
     box.innerHTML = "";
 
-    var target = memberById(state.replaceTarget);
     var title = document.createElement("div");
     title.className = "picker-title";
-    title.textContent = "用谁顶替「" + (target ? target.display_name : "") + "」：";
+    title.textContent = "用谁顶替「" + target.display_name + "」：";
     box.appendChild(title);
 
     var cands = document.createElement("div");
     cands.className = "picker-cands";
-    state.myRoles.concat(state.peers).forEach(function (member) {
-      if (member.member_id === state.replaceTarget) { return; }
+    // 已在房间里的成员（含被替换者自己）都不能当候选
+    var room = currentRoom();
+    var inRoom = {};
+    (room && room.member_ids ? room.member_ids : []).forEach(function (id) { inRoom[id] = true; });
+    // 只从同类上游里挑：我的角色 → state.myRoles；Bot → state.peers（与 buildAddRow 一致）
+    var upstream = isUser ? state.myRoles : state.peers;
+    var kind = isUser ? "user_role" : "bot";
+    var free = upstream.filter(function (member) {
+      return member.kind === kind && !inRoom[member.member_id];
+    });
+    if (!free.length) {
+      var none = document.createElement("div");
+      none.className = "muted";
+      none.textContent = "（没有可替换的角色）";
+      cands.appendChild(none);
+    }
+    free.forEach(function (member) {
       var button = document.createElement("button");
       button.type = "button";
       button.className = "picker-cand";
@@ -1804,7 +1918,7 @@
     }
   }
 
-  // 勾了人时才给一句顺序反馈；一个都没勾时不显示任何字（面板标题已经说了「不勾选=随机」）
+  // 勾了人时才给一句顺序反馈；一个都没勾时不显示任何字（面板标题已经说了「不勾选=随机接话」）
   function updateTurnHint() {
     var timing = state.timing || {};
     if (state.speakerOrder.length) {
@@ -2048,7 +2162,13 @@
     del.className = "icon-btn is-danger";
     del.textContent = "删除";
     del.title = "删掉这个角色（也会从所有房间里移除）";
-    del.onclick = function () { deleteMyRole(member.member_id); };
+    del.onclick = function () {
+      askConfirm(
+        "删除我的角色「" + member.display_name + "」？",
+        "这个角色会从所有房间里一并移除，不可撤销。",
+        function () { deleteMyRole(member.member_id); }
+      );
+    };
     actions.appendChild(del);
 
     li.appendChild(actions);
@@ -2355,15 +2475,14 @@
     var saved = keepScroll ? box.scrollTop : null;
     box.innerHTML = "";
     var room = currentRoom();
-    // 顶栏标题带上「群聊 ·」前缀，跟私聊标题（私聊 · 甲 ⇄ 乙）一个口径，
-    // 一眼能看出当前在看的是群聊还是私聊
-    $("stage-room-name").textContent = room ? ("群聊 · " + room.name) : "群聊";
+    // 顶栏标题直接显示房间名，不加「群聊 ·」前缀（视图本身已经说明了当前模式）
+    $("stage-room-name").textContent = room ? room.name : "群聊";
 
     var segments = segmentsOf("group");
     if (!segments.length) {
       var empty = document.createElement("div");
       empty.className = "empty";
-      empty.textContent = "这个房间还没有台词。写一幕「选角色 + 台词」，点「开演（提交一幕）」试试。";
+      empty.textContent = "这个房间还没有台词。写一幕「选角色 + 台词」，点「发送消息」试试。";
       box.appendChild(empty);
       return;
     }
@@ -2570,17 +2689,23 @@
     var box = $("private-timeline");
     var saved = keepScroll ? box.scrollTop : null;
     box.innerHTML = "";
-    // 标题按「对方 × 我方角色」拼，跟有没有线程无关
+    // 标题按「对方 × 我方角色」拼，跟有没有线程无关。
+    // 对方从受管 Bot / 成员池里找（私聊列表的数据源），不再依赖 state.peers。
     var peer = null;
-    state.peers.forEach(function (item) {
-      if (item.member_id === state.currentPeerId) { peer = item; }
+    (state.managedBots || []).some(function (item) {
+      if (item.peer_member_id === state.currentPeerId) {
+        peer = { member_id: item.peer_member_id, display_name: item.peer_name || item.bot_name };
+        return true;
+      }
+      return false;
     });
+    if (!peer) { peer = memberById(state.currentPeerId); }
     var myName = "";
     state.myRoles.forEach(function (item) {
       if (item.member_id === state.privateSpeaker) { myName = item.display_name; }
     });
     $("private-title").textContent = peer
-      ? ("私聊 · " + (myName || "我") + " ⇄ " + peer.display_name)
+      ? ((myName || "我") + " ⇄ " + peer.display_name)
       : "私聊";
     // 右栏那行小字直说「只发给谁」，别用「只递给对方一人」这种绕口的说法
     var peerNote = $("private-peer-note");
@@ -2604,12 +2729,92 @@
     if (saved === null) { scrollToBottom(box); } else { box.scrollTop = saved; }
   }
 
+  // 「最近和当前操作角色聊过」的时间：取该线程最后一条消息的 time（HH:MM），
+  // 没聊过返回空串 —— 排序时空串沉底，再按首字母兜底。
+  function lastChatTime(peerMemberId) {
+    var myId = state.privateSpeaker;
+    if (!myId) { return ""; }
+    var latest = "";
+    (state.privateThreads || []).forEach(function (thread) {
+      if (thread.peer_member_id !== peerMemberId || thread.my_member_id !== myId) { return; }
+      var msgs = [];
+      (thread.segments || []).forEach(function (seg) {
+        (seg.messages || []).forEach(function (msg) { msgs.push(msg); });
+      });
+      if (!msgs.length) { return; }
+      var t = msgs[msgs.length - 1].time || "";
+      if (t > latest) { latest = t; }
+    });
+    return latest;
+  }
+
+  // 手动刷新「私聊对象」：重新向宿主拉一次 bootstrap，只更新私聊相关的数据。
+  // 页面本身不轮询，这是唯一的主动拉取入口。
+  async function refreshPrivatePeers() {
+    var btn = $("refresh-peers-btn");
+    if (btn) { btn.disabled = true; }
+    // 记住当前选中，刷新后尽量保住（对方若已不在名单里才回退到第一个）
+    var keepPeerId = state.currentPeerId;
+    var keepSpeakerId = state.privateSpeaker;
+    try {
+      var data = await window.maibot.query("bootstrap");
+      if (data.member_pool) { state.memberPool = data.member_pool; }
+      if (data.my_roles) { state.myRoles = data.my_roles; }
+      if (data.managed_bots) { state.managedBots = data.managed_bots; }
+      if (data.private_threads) {
+        state.privateThreads = data.private_threads;
+        state.privateTimeline = {}; // 线程快照变了，旧的重绘缓存作废
+      }
+      // 当前对方：还在名单里就保留，否则回退到第一个
+      var ids = (state.managedBots || []).map(function (b) { return b.peer_member_id; });
+      state.currentPeerId = ids.indexOf(keepPeerId) >= 0 ? keepPeerId : (ids.length ? ids[0] : null);
+      // 当前操作角色：还在角色列表里就保留，否则回退到第一个
+      var roleIds = (state.myRoles || []).map(function (m) { return m.member_id; });
+      state.privateSpeaker = roleIds.indexOf(keepSpeakerId) >= 0
+        ? keepSpeakerId : (roleIds.length ? roleIds[0] : "");
+
+      renderPrivatePeers();
+      renderPrivateSpeaker();
+      renderPrivate();
+      renderPrivateTurnState();
+      clearPrivateError();
+    } catch (error) {
+      showPrivateError("刷新失败：" + (error && error.message ? error.message : error));
+    } finally {
+      if (btn) { btn.disabled = false; }
+    }
+  }
+
+  // 私聊对象 = 宿主的**全部受管 Bot**（默认全展示，不提供增删）。
+  // 排序：最近和「当前操作的角色」聊过的排上面；没聊过按名字首字母。
   function renderPrivatePeers() {
     var box = $("private-peers");
     box.innerHTML = "";
-    $("private-peer-count").textContent = state.peers.length + " 个";
+    var bots = (state.managedBots || []).map(function (managed) {
+      // 补全展示字段：受管名单只有 bot_id / peer_member_id / peer_name
+      var full = memberById(managed.peer_member_id) || {};
+      return {
+        member_id: managed.peer_member_id,
+        display_name: managed.peer_name || full.display_name || managed.bot_name || "未命名 Bot",
+        bot_name: managed.bot_name || "",
+        avatar: full.avatar || "🤖",
+        status: full.status || "",
+        last: lastChatTime(managed.peer_member_id)
+      };
+    });
+    bots.sort(function (a, b) {
+      if (a.last !== b.last) {
+        // 有聊过的排前面；都是 HH:MM，字典序即时间序
+        if (!a.last) { return 1; }
+        if (!b.last) { return -1; }
+        return a.last < b.last ? 1 : -1; // 越晚越靠前
+      }
+      return a.display_name.localeCompare(b.display_name, "zh-CN");
+    });
+
+    $("private-peer-count").textContent = bots.length + " 个";
     var currentPeer = state.currentPeerId;
-    state.peers.forEach(function (peer) {
+    bots.forEach(function (peer) {
       var li = document.createElement("li");
       li.className = "is-clickable";
       if (peer.member_id === currentPeer) { li.className += " is-current"; }
@@ -2628,58 +2833,14 @@
       name.textContent = peer.display_name;
       var sub = document.createElement("div");
       sub.className = "member-sub";
-      sub.textContent = peer.bot_name || "私聊对象";
+      sub.textContent = peer.last ? ("最近聊于 " + peer.last) : (peer.bot_name || "私聊对象");
       text.appendChild(name);
       text.appendChild(sub);
       li.appendChild(text);
 
-      var remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "icon-btn is-danger";
-      remove.textContent = "✕";
-      remove.title = "从私聊对象里删掉";
-      remove.onclick = function (event) {
-        event.stopPropagation();
-        myRoleAction("delete_peer", { member_id: peer.member_id });
-      };
-      li.appendChild(remove);
-
       li.onclick = function () { switchPeer(peer.member_id); };
       box.appendChild(li);
     });
-    buildManagedBotRow("peer-add-row");
-  }
-
-  // 私聊对象的添加组件：下拉列宿主的受管 Bot（麦麦一号 / 麦麦二号）
-  function buildManagedBotRow(rowId) {
-    var row = $(rowId);
-    if (!row) { return; }
-    row.innerHTML = "";
-    var select = document.createElement("select");
-    select.className = "mini-select";
-    select.title = "选一个受管 Bot";
-    var none = document.createElement("option");
-    none.value = "";
-    none.textContent = "选受管 Bot";
-    select.appendChild(none);
-    state.managedBots.forEach(function (bot) {
-      var option = document.createElement("option");
-      option.value = bot.bot_id;
-      option.textContent = bot.bot_name + (bot.added ? "（已在私聊对象里）" : "");
-      option.disabled = !!bot.added;
-      select.appendChild(option);
-    });
-    row.appendChild(select);
-    var button = document.createElement("button");
-    button.type = "button";
-    button.className = "maibot-button";
-    button.textContent = "添加";
-    button.onclick = function () {
-      var botId = select.value;
-      if (!botId) { showError("先选一个受管 Bot"); return; }
-      myRoleAction("add_peer", { bot_id: botId });
-    };
-    row.appendChild(button);
   }
 
   /* ── 提交一幕（群聊）──────────────────────────────────── */
@@ -3069,6 +3230,7 @@
     if (state.privateElapsedTimer) { clearInterval(state.privateElapsedTimer); state.privateElapsedTimer = null; }
     $("stop-private-turn").hidden = true;
     renderPrivateTurnState(note || "本轮结束。");
+    renderPrivatePeers(); // 刚聊过，把对方排到最上面
   }
 
   function stopPrivateTurn() {
@@ -3118,47 +3280,86 @@
 
   /* ── 提示 ─────────────────────────────────────────────── */
 
-  // 错误提示写在**当前可见**的那个输入面板上（群聊 / 私聊各有一个）
+  // 系统提示写在**聊天窗口的标题行**（时光机右边），群聊 / 私聊各有一个。
+  // 用 classList 只增删状态类，保住 head-notice 这个省略号样式类不被覆盖；
+  // 全文始终挂在 title 上，文本再长也只省略显示、hover 能看全。
   function errorBox() {
     return state.currentView === "private" ? $("private-script-error") : $("script-error");
   }
 
-  function showError(text) {
-    var box = errorBox();
+  function setNotice(box, kind, text) {
     if (!box) { return; }
-    box.className = "err";
+    box.classList.remove("err", "ok");
+    box.classList.add("head-notice", kind);
     box.textContent = text;
+    box.title = text;
     box.hidden = false;
   }
 
+  function clearNotice(box) {
+    if (!box) { return; }
+    box.hidden = true;
+    box.textContent = "";
+    box.title = "";
+  }
+
+  function showError(text) {
+    setNotice(errorBox(), "err", text);
+  }
+
   function clearError() {
-    ["script-error", "private-script-error"].forEach(function (id) {
-      var box = $(id);
-      if (!box) { return; }
-      box.hidden = true;
-      box.textContent = "";
-    });
+    ["script-error", "private-script-error"].forEach(function (id) { clearNotice($(id)); });
   }
 
   // 说明性提示（比如「导出还没实现」），跟错误分开放
   function showInfo(text) {
-    var box = $("script-error");
-    box.className = "ok";
-    box.textContent = text;
-    box.hidden = false;
+    setNotice($("script-error"), "ok", text);
   }
 
   function showPrivateError(text) {
-    var box = $("private-script-error");
-    box.className = "err";
-    box.textContent = text;
-    box.hidden = false;
+    setNotice($("private-script-error"), "err", text);
   }
 
   function clearPrivateError() {
-    var box = $("private-script-error");
-    box.hidden = true;
-    box.textContent = "";
+    clearNotice($("private-script-error"));
+  }
+
+  /* ── 危险操作的通用确认层 ────────────────────────────────
+     只用于删房间 / 删角色 / 删群员 / 删私聊对象这类不可撤销的操作。
+     点【确认删除】才真正执行；取消 / ESC / 点遮罩都只是关掉，什么都不做。
+     同一时刻只显示一个，重复调用以最后一次为准。                    */
+  var confirmAction = null;
+
+  function closeConfirm() {
+    confirmAction = null;
+    var overlay = $("confirm-overlay");
+    if (overlay) { overlay.hidden = true; }
+  }
+
+  function askConfirm(title, detail, onConfirm) {
+    var overlay = $("confirm-overlay");
+    if (!overlay) { if (onConfirm) { onConfirm(); } return; }
+    confirmAction = onConfirm || null;
+    $("confirm-title").textContent = title;
+    $("confirm-detail").textContent = detail || "这个操作不可撤销。";
+    overlay.hidden = false;
+    $("confirm-ok").focus();
+  }
+
+  function initConfirm() {
+    $("confirm-ok").onclick = function () {
+      var action = confirmAction;
+      closeConfirm();
+      if (action) { action(); }
+    };
+    $("confirm-cancel").onclick = closeConfirm;
+    // 只点遮罩本身才算取消，点卡片内部不关
+    $("confirm-overlay").onclick = function (event) {
+      if (event.target === $("confirm-overlay")) { closeConfirm(); }
+    };
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && !$("confirm-overlay").hidden) { closeConfirm(); }
+    });
   }
 
   // 业务失败由插件用 ok=false 返回（不抛异常），这里统一取错误文案
@@ -3203,6 +3404,7 @@
   /* ── 启动 ─────────────────────────────────────────────── */
 
   function bindEvents() {
+    initConfirm();
     // 群聊/私聊 拨片现在在两个视图的标题栏里各有一份，用事件委托统一处理
     document.addEventListener("click", function (event) {
       var target = event.target.closest(".viewtab");
@@ -3212,9 +3414,11 @@
     $("room-rename-save").onclick = renameRoom;
     $("room-rename-cancel").onclick = function () { $("rename-row").hidden = true; };
     $("add-line").onclick = function () { addRowTo(state.scriptRows); };
+    $("refresh-peers-btn").onclick = refreshPrivatePeers;
     $("private-text").oninput = function () { updateSubmitButtons(); };
     $("private-speaker").onchange = function (event) {
       state.privateSpeaker = event.target.value;
+      renderPrivatePeers(); // 按新角色重新排「最近聊过」的顺序
       renderPrivate();
       renderPrivateTurnState();
     };
@@ -3254,7 +3458,10 @@
       state.privateTimeline = {};
       state.currentRoomId = state.rooms.length ? state.rooms[0].room_id : null;
       state.currentThreadId = state.privateThreads.length ? state.privateThreads[0].thread_id : null;
-      state.currentPeerId = state.privateThreads.length ? state.privateThreads[0].peer_member_id : null;
+      // 当前对方从受管 Bot 名单取（私聊列表的数据源），不再依赖线程顺序
+      state.currentPeerId = state.managedBots.length
+        ? state.managedBots[0].peer_member_id
+        : (state.privateThreads.length ? state.privateThreads[0].peer_member_id : null);
 
       // 时光机：群聊、私聊各一个面板（共用同一套逻辑）
       state.tmGroup = buildTimeMachine("group", "tm-slot-group");

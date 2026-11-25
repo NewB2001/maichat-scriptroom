@@ -7,6 +7,9 @@ __pycache__/
 *.egg-info/
 .venv/
 
+# 本地备份（回滚点，不入版本控制）
+*.bak-*
+
 # 编辑器
 .idea/
 .vscode/

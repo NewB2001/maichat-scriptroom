@@ -105,6 +105,47 @@ MEMBER_POOL: List[Dict[str, Any]] = [
         "avatar": "🍑",
         "editable": False,
     },
+    # ── 私聊专用 Bot：为了让「最近聊过排序」有东西可看而加 ──
+    # 三个接入状态各一个，界面上能对照展示（不塞进群聊房间，两种模式数据分开）。
+    {
+        "member_id": "bot_kakashi",
+        "kind": "bot",
+        "display_name": "卡卡西",
+        "persona_label": "旗木卡卡西",
+        "sort_order": 4,
+        "status": STATUS_READY,
+        "status_label": STATUS_LABELS[STATUS_READY],
+        "bot_id": "11111111111111111111111111111111",
+        "bot_name": "麦麦三号",
+        "avatar": "😷",
+        "editable": False,
+    },
+    {
+        "member_id": "bot_ino",
+        "kind": "bot",
+        "display_name": "井野",
+        "persona_label": "山中井野",
+        "sort_order": 5,
+        "status": STATUS_GATEWAY_OFF,
+        "status_label": STATUS_LABELS[STATUS_GATEWAY_OFF],
+        "bot_id": "22222222222222222222222222222222",
+        "bot_name": "麦麦四号",
+        "avatar": "🌼",
+        "editable": False,
+    },
+    {
+        "member_id": "bot_shikamaru",
+        "kind": "bot",
+        "display_name": "鹿丸",
+        "persona_label": "奈良鹿丸",
+        "sort_order": 6,
+        "status": STATUS_STOPPED,
+        "status_label": STATUS_LABELS[STATUS_STOPPED],
+        "bot_id": "33333333333333333333333333333333",
+        "bot_name": "麦麦五号",
+        "avatar": "☁️",
+        "editable": False,
+    },
 ]
 
 # 每个角色身份都绑定**固定的「平台 + 账号」**——
@@ -120,6 +161,9 @@ _IDENTITY: Dict[str, Tuple[str, str]] = {
     "role_sasuke": ("webui", "user.sasuke"),
     "bot_hinata": ("webui", "bot.7465370ac85c480e84eca97e1a0fc606"),
     "bot_sakura": ("webui", "bot.478de351a42d4ae59a4f1ed9a6a0c2b3"),
+    "bot_kakashi": ("webui", "bot.11111111111111111111111111111111"),
+    "bot_ino": ("webui", "bot.22222222222222222222222222222222"),
+    "bot_shikamaru": ("webui", "bot.33333333333333333333333333333333"),
 }
 for _member in MEMBER_POOL:
     _member["platform"], _member["account"] = _IDENTITY[_member["member_id"]]
@@ -136,6 +180,21 @@ MANAGED_BOTS: List[Dict[str, Any]] = [
         "bot_id": "478de351a42d4ae59a4f1ed9a6a0c2b3",
         "bot_name": "麦麦二号",
         "peer_member_id": "bot_sakura",
+    },
+    {
+        "bot_id": "11111111111111111111111111111111",
+        "bot_name": "麦麦三号",
+        "peer_member_id": "bot_kakashi",
+    },
+    {
+        "bot_id": "22222222222222222222222222222222",
+        "bot_name": "麦麦四号",
+        "peer_member_id": "bot_ino",
+    },
+    {
+        "bot_id": "33333333333333333333333333333333",
+        "bot_name": "麦麦五号",
+        "peer_member_id": "bot_shikamaru",
     },
 ]
 
@@ -242,12 +301,30 @@ REPLY_TEMPLATES: Dict[str, List[str]] = {
         "喂！{echo}——这种事要一起扛啦，笨蛋。",
         "{echo}？哼，我可不会输给这种小场面。",
     ],
+    "bot_kakashi": [
+        "「{echo}」……嗯，有点意思。",
+        "抱歉我迟到了，路上遇到点小麻烦。{echo}？",
+        "{echo}——这种事，交给我吧。",
+    ],
+    "bot_ino": [
+        "喂喂，{echo}——这可是都听说了哦。",
+        "别小看山中一族的心转身之术，{echo}瞒不过我。",
+        "哼，井野我可不会输给你。",
+    ],
+    "bot_shikamaru": [
+        "「{echo}」……真麻烦。",
+        "啊——{echo}这种事，想想都累。",
+        "算了，反正也没什么大不了的。",
+    ],
 }
 
 # 表情包假数据。一轮回复可能产出「文本 + 表情包」两条消息行（8.6 结论 3）。
 STICKER_POOL: Dict[str, List[str]] = {
     "bot_hinata": ["害羞", "捂脸", "点头"],
     "bot_sakura": ["生气", "叉腰", "爆炸"],
+    "bot_kakashi": ["无奈", "看书", "眯眼"],
+    "bot_ino": ["得意", "挑眉", "加油"],
+    "bot_shikamaru": ["叹气", "躺平", "无聊"],
 }
 
 
@@ -1252,6 +1329,63 @@ class ChatroomShellPlugin(MaiBotPlugin):
                     _build_segment(1, "normal", [
                         ("鸣人", "line", "小樱！今天的拉面我请客！", -110),
                         ("小樱", "reply", "……你上次也是这么说的，然后钱包空了三天。", -88),
+                    ]),
+                ],
+            },
+            # ── 私聊演示数据：让「最近聊过排序」有明显效果 ──
+            # offset 是相对现在的秒数，决定消息上的 HH:MM；越接近 0 越靠前。
+            # 鸣人视角：卡卡西最近 → 雏田 → 小樱；井野/鹿丸没聊过（兜底按首字母）。
+            {
+                "thread_id": "private_kakashi_naruto",
+                "peer_member_id": "bot_kakashi",
+                "peer_name": "卡卡西",
+                "peer_kind": "bot",
+                "peer_status": STATUS_READY,
+                "peer_status_label": STATUS_LABELS[STATUS_READY],
+                "my_member_id": "role_naruto",
+                "my_name": "鸣人",
+                "segments": [
+                    _build_segment(1, "normal", [
+                        ("鸣人", "line", "卡卡西老师，今天的训练能早点结束吗？", -540),
+                        ("卡卡西", "reply", "「早点结束训练」……嗯，今天破例一次吧。", -530),
+                    ]),
+                    _build_segment(2, "normal", [
+                        ("鸣人", "line", "太好了！我请你吃拉面！", -120),
+                        ("卡卡西", "reply", "哈哈，那我就不客气了。", -110),
+                    ]),
+                ],
+            },
+            # 佐助视角：井野最近聊过（23:05 感觉），小樱次之；其余没聊过。
+            {
+                "thread_id": "private_ino_sasuke",
+                "peer_member_id": "bot_ino",
+                "peer_name": "井野",
+                "peer_kind": "bot",
+                "peer_status": STATUS_GATEWAY_OFF,
+                "peer_status_label": STATUS_LABELS[STATUS_GATEWAY_OFF],
+                "my_member_id": "role_sasuke",
+                "my_name": "佐助",
+                "segments": [
+                    _build_segment(1, "normal", [
+                        ("井野", "line", "佐助，你今天看起来心情不错嘛。", -300),
+                        ("佐助", "reply", "……没有的事。", -290),
+                    ]),
+                ],
+            },
+            # 鹿丸：只跟鸣人有一句很早的对话（演示「聊过但很久以前」）。
+            {
+                "thread_id": "private_shikamaru_naruto",
+                "peer_member_id": "bot_shikamaru",
+                "peer_name": "鹿丸",
+                "peer_kind": "bot",
+                "peer_status": STATUS_STOPPED,
+                "peer_status_label": STATUS_LABELS[STATUS_STOPPED],
+                "my_member_id": "role_naruto",
+                "my_name": "鸣人",
+                "segments": [
+                    _build_segment(1, "normal", [
+                        ("鸣人", "line", "鹿丸，陪我下棋吧！", -3600),
+                        ("鹿丸", "reply", "「陪我下棋」……真麻烦。", -3580),
                     ]),
                 ],
             },
